@@ -19,6 +19,7 @@ Connect this MCP server to Claude, ChatGPT, Cursor, or any MCP-compatible client
 | `usd_inspect` | Read the scene graph — list all prims, types, hierarchy |
 | `usd_get_prim` | Get detailed properties, attributes, and metadata for a specific prim |
 | `usd_get_materials` | List all materials and their shader parameters |
+| `usd_get_material_graph` | Inspect full UsdShade/MaterialX-style material graphs, shader IDs, texture assets, and connections |
 | `usd_get_transforms` | Get world-space transforms for prims |
 | `usd_list_variants` | List all variant sets and their options |
 | `usd_set_variant` | Switch a variant selection |

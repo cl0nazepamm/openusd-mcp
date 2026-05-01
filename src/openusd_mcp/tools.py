@@ -117,6 +117,126 @@ def get_materials(path: str) -> dict[str, Any]:
     return {"materials": materials}
 
 
+def _value_to_json(value: Any) -> Any:
+    """Convert USD values into JSON-friendly scalars/lists/strings."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_value_to_json(item) for item in value]
+
+    path = getattr(value, "path", None)
+    resolved_path = getattr(value, "resolvedPath", None)
+    if path is not None or resolved_path is not None:
+        result = {"path": str(path) if path is not None else ""}
+        if resolved_path:
+            result["resolved_path"] = str(resolved_path)
+        return result
+
+    try:
+        return [_value_to_json(item) for item in value]
+    except TypeError:
+        return str(value)
+
+
+def _connection_to_json(source_info: Any) -> dict[str, Any]:
+    return {
+        "source_path": str(source_info.source.GetPath()),
+        "source_name": source_info.sourceName,
+        "source_type": str(source_info.sourceType),
+    }
+
+
+def _output_render_context(full_name: str) -> str:
+    parts = full_name.split(":")
+    if len(parts) <= 2 or parts[0] != "outputs":
+        return ""
+    return ":".join(parts[1:-1])
+
+
+def get_material_graph(path: str, material_path: Optional[str] = None) -> dict[str, Any]:
+    """Return full UsdShade material graphs, including MaterialX-style shader nodes."""
+    from pxr import UsdShade
+
+    stage = _open_stage(path)
+
+    if material_path:
+        prim = stage.GetPrimAtPath(material_path)
+        if not prim.IsValid() or not prim.IsA(UsdShade.Material):
+            return {"error": f"Material not found: {material_path}"}
+        material_prims = [prim]
+    else:
+        material_prims = [prim for prim in stage.Traverse() if prim.IsA(UsdShade.Material)]
+
+    materials = []
+    for prim in material_prims:
+        material = UsdShade.Material(prim)
+        material_info: dict[str, Any] = {
+            "path": str(prim.GetPath()),
+            "name": prim.GetName(),
+            "outputs": [],
+            "nodes": [],
+        }
+
+        for output in material.GetOutputs():
+            sources, invalid_sources = output.GetConnectedSources()
+            material_info["outputs"].append({
+                "name": output.GetBaseName(),
+                "full_name": output.GetFullName(),
+                "type_name": str(output.GetTypeName()),
+                "render_context": _output_render_context(output.GetFullName()),
+                "connected_sources": [_connection_to_json(source) for source in sources],
+                "invalid_source_count": len(invalid_sources),
+            })
+
+        for child in prim.GetChildren():
+            node_info: dict[str, Any] = {
+                "path": str(child.GetPath()),
+                "name": child.GetName(),
+                "type": child.GetTypeName(),
+                "inputs": [],
+                "outputs": [],
+            }
+
+            if child.IsA(UsdShade.Shader):
+                shader = UsdShade.Shader(child)
+                node_info["shader_id"] = shader.GetIdAttr().Get()
+                node_info["implementation_source"] = str(shader.GetImplementationSource())
+
+                source_asset = shader.GetSourceAsset()
+                if source_asset:
+                    node_info["source_asset"] = _value_to_json(source_asset)
+
+                source_asset_sub_identifier = shader.GetSourceAssetSubIdentifier()
+                if source_asset_sub_identifier:
+                    node_info["source_asset_sub_identifier"] = source_asset_sub_identifier
+
+                for shader_input in shader.GetInputs():
+                    sources, invalid_sources = shader_input.GetConnectedSources()
+                    node_info["inputs"].append({
+                        "name": shader_input.GetBaseName(),
+                        "full_name": shader_input.GetFullName(),
+                        "type_name": str(shader_input.GetTypeName()),
+                        "value": _value_to_json(shader_input.Get()),
+                        "connected_sources": [
+                            _connection_to_json(source) for source in sources
+                        ],
+                        "invalid_source_count": len(invalid_sources),
+                    })
+
+                for shader_output in shader.GetOutputs():
+                    node_info["outputs"].append({
+                        "name": shader_output.GetBaseName(),
+                        "full_name": shader_output.GetFullName(),
+                        "type_name": str(shader_output.GetTypeName()),
+                    })
+
+            material_info["nodes"].append(node_info)
+
+        materials.append(material_info)
+
+    return {"materials": materials}
+
+
 def get_transforms(path: str, prim_path: Optional[str] = None) -> dict[str, Any]:
     """Get transforms for one or all xformable prims."""
     from pxr import Usd, UsdGeom

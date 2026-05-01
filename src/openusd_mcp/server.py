@@ -60,6 +60,22 @@ def usd_get_materials(path: str) -> str:
 
 
 @mcp.tool()
+def usd_get_material_graph(path: str, material_path: Optional[str] = None) -> str:
+    """Get full UsdShade material graphs for USD Preview Surface and MaterialX-style networks.
+
+    Returns material outputs, shader nodes, shader identifiers, input values,
+    texture asset paths, and all node-to-node connections. If material_path is
+    omitted, returns every material in the stage.
+
+    Args:
+        path: Path to the USD file
+        material_path: Optional material prim path, e.g. /World/Looks/Gold
+    """
+    result = tools.get_material_graph(path, material_path)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
 def usd_get_transforms(path: str, prim_path: Optional[str] = None) -> str:
     """Get local and world-space transforms for prims.
 
